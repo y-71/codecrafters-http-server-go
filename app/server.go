@@ -15,25 +15,9 @@ type Header struct {
 	UserAgent 	string
 }
 
-func main() {
-	fmt.Println("Logs from your program will appear here!")
-
-	l, err := net.Listen("tcp", "0.0.0.0:4221")
-
-	if err != nil {
-		fmt.Println("Failed to bind to port 4221")
-		os.Exit(1)
-	}
-
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
-	}
-
-	// Read data from the connection
-	buf := make([]byte, 1024) // Create a buffer to hold the incoming data
-	_, err = conn.Read(buf)   // Read data from the connection into the buffer
+func handleConnection(conn net.Conn){
+	buf := make([]byte, 1024)
+	_, err := conn.Read(buf)
 	if err != nil {
 		fmt.Println("Error reading from connection: ", err.Error())
 		os.Exit(1)
@@ -87,7 +71,28 @@ func main() {
 		fmt.Println("Error closing connection: ", err.Error())
 		os.Exit(1)
 	}
+}
 
+func main() {
+	fmt.Println("Logs from your program will appear here!")
+
+	l, err := net.Listen("tcp", "0.0.0.0:4221")
+
+	if err != nil {
+		fmt.Println("Failed to bind to port 4221")
+		os.Exit(1)
+	}
+	defer l.Close()
+
+	for{
+		conn, err := l.Accept()
+		
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+		go handleConnection(conn)
+	}
 }
 
 func (h Header) isRoute(route string) bool {
