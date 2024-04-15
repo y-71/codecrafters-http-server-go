@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -19,14 +18,17 @@ type Header struct {
 
 func handleConnection(conn net.Conn, directory string) {
 	buf := make([]byte, 1024)
-	_, err := conn.Read(buf)
+	n, err := conn.Read(buf)
 	if err != nil {
 		fmt.Println("Error reading from connection: ", err.Error())
 		os.Exit(1)
 	}
-	headers := strings.Fields(strings.TrimSpace(string(buf)))
+	request := string(buf[:n])
 
-	if len(headers) < 3 {
+	lines := strings.Split(request, "\n")
+	firstLine := strings.Fields(lines[0])
+
+	if len(firstLine) < 3 {
 		// Return a 400 Bad Request response for incomplete or malformed requests
 		response := []byte("HTTP/1.1 400 Bad Request\r\n\r\n")
 		_, err := conn.Write(response)
@@ -36,13 +38,16 @@ func handleConnection(conn net.Conn, directory string) {
 		return
 	}
 
-	httpMethod := headers[0]
-	path := headers[1]
-	httpVersion := headers[2]
+	httpMethod := firstLine[0]
+	path := firstLine[1]
+	httpVersion := firstLine[2]
 	userAgent := ""
 
-	if len(headers) > 6 {
-		userAgent = headers[6]
+	for _, line := range lines {
+		if strings.HasPrefix(line, "User-Agent:") {
+			userAgent = strings.TrimSpace(strings.TrimPrefix(line, "User-Agent:"))
+			break
+		}
 	}
 
 	header := Header{
@@ -57,38 +62,19 @@ func handleConnection(conn net.Conn, directory string) {
 	switch {
 	case header.Path == "/":
 		response = []byte("HTTP/1.1 200 OK\r\n\r\n ")
-	case header.isRoute("/echo"):
-		content, _ := header.getEchoPathContent()
-		response = []byte(fmt.Sprintf(
-			"HTTP/1.1 200 OK\r\n"+
-				"Content-Type: text/plain\r\n"+
-				"Content-Length: %d\r\n\r\n"+
-				"%s", len(content), content))
-	case header.isRoute("/user-agent"):
-		response = []byte(fmt.Sprintf(
-			"HTTP/1.1 200 OK\r\n"+
-				"Content-Type: text/plain\r\n"+
-				"Content-Length: %d\r\n\r\n"+
-				"%s", len(header.UserAgent), header.UserAgent))
-	case strings.HasPrefix(header.Path, "/files/"):
-		if directory == "" {
-			response = []byte("HTTP/1.1 404 Not Found\r\n\r\n")
-			break
-		}
+	case strings.HasPrefix(header.Path, "/files/") && header.HttpMethod == "POST":
+		filename := header.Path[len("/files/"):]
+		filePath := filepath.Join(directory, filename)
+		body := strings.SplitN(request, "\n\n", 2)[1]
 
-		filePath := filepath.Join(directory, header.Path[len("/files/"):])
-		content, err := ioutil.ReadFile(filePath)
+		err := ioutil.WriteFile(filePath, []byte(body), 0644)
 		if err != nil {
-			response = []byte("HTTP/1.1 404 Not Found\r\n\r\n")
+			response = []byte("HTTP/1.1 500 Internal Server Error\r\n\r\n")
 		} else {
-			response = []byte(fmt.Sprintf(
-				"HTTP/1.1 200 OK\r\n"+
-					"Content-Type: application/octet-stream\r\n"+
-					"Content-Length: %d\r\n\r\n"+
-					"%s", len(content), content))
+			response = []byte("HTTP/1.1 201 Created\r\n\r\n")
 		}
 	default:
-		response = []byte("HTTP/1.1 404 Not Found\r\n\r\n ")
+		response = []byte("HTTP/1.1 404 Not Found\r\n\r\n")
 	}
 
 	_, err = conn.Write(response)
@@ -127,18 +113,4 @@ func main() {
 		}
 		go handleConnection(conn, directory)
 	}
-}
-
-func (h Header) isRoute(route string) bool {
-	return strings.HasPrefix(h.Path, route)
-}
-
-func (h Header) getEchoPathContent() (string, error) {
-	if !h.isRoute("/echo") {
-		return "", errors.New("invalid path format: expected path to start with '/echo/'")
-	}
-	if !strings.HasPrefix(h.Path, "/echo/") {
-		return "", nil
-	}
-	return h.Path[len("/echo/"):], nil
 }
