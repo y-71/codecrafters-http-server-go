@@ -71,6 +71,11 @@ func handleConnection(conn net.Conn, directory string) {
 				"Content-Length: %d\r\n\r\n"+
 				"%s", len(header.UserAgent), header.UserAgent))
 	case strings.HasPrefix(header.Path, "/files/"):
+		if directory == "" {
+			response = []byte("HTTP/1.1 404 Not Found\r\n\r\n")
+			break
+		}
+
 		filePath := filepath.Join(directory, header.Path[len("/files/"):])
 		content, err := ioutil.ReadFile(filePath)
 		if err != nil {
@@ -102,12 +107,10 @@ func handleConnection(conn net.Conn, directory string) {
 func main() {
 	fmt.Println("Logs from your program will appear here!")
 
-	if len(os.Args) < 3 || os.Args[1] != "--directory" {
-		fmt.Println("Usage: ./your_server.sh --directory <directory>")
-		os.Exit(1)
+	var directory string
+	if len(os.Args) > 2 && os.Args[1] == "--directory" {
+		directory = os.Args[2]
 	}
-
-	directory := os.Args[2]
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
