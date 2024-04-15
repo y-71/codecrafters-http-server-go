@@ -25,7 +25,13 @@ func handleConnection(conn net.Conn){
 	headers := strings.Fields(strings.TrimSpace(string(buf)))
 
 	if len(headers) < 6 {
-		fmt.Println("Invalid number of headers")
+		// Return a 400 Bad Request response for incomplete or malformed requests
+		response := []byte("HTTP/1.1 400 Bad Request\r\n\r\n")
+		_, err := conn.Write(response)
+		if err != nil {
+			fmt.Println("Error writing to connection:", err)
+		}
+		return
 	}
 	httpMethod := headers[0]
 	path := headers[1]
